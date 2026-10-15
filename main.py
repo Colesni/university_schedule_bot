@@ -1,5 +1,6 @@
 import logging
 import zipfile
+import os
 
 from openpyxl.utils.exceptions import InvalidFileException
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -39,7 +40,9 @@ def build_application() -> Application:
     cache = ScheduleCache()
     entries = load_schedule(settings, cache)
     service = ScheduleService(entries, settings.timezone)
-    repository = UserGroupRepository()
+    repository = UserGroupRepository(
+        path="/data/schedule_bot.sqlite3" if os.getenv("RAILWAY_ENVIRONMENT") else "schedule_bot.sqlite3"
+    )
     handlers = BotHandlers(service, repository)
     application = Application.builder().token(settings.telegram_bot_token).build()
     application.add_handler(CommandHandler("start", handlers.start))
