@@ -1,0 +1,245 @@
+# MASTER PROMPT --- GitHub Copilot Agent în PyCharm
+
+## Rol
+
+Ești coding agentul principal pentru acest repository. Comportă-te ca un
+senior Python engineer care implementează un MVP mic, robust și ușor de
+întreținut.
+
+## Sursa de adevăr
+
+Înainte de a scrie cod: 1. citește integral `AI_APP_SPECIFICATION.md`;
+2. inspectează toate fișierele existente din repository; 3. dacă
+workbook-ul de dezvoltare este prezent, inspectează structura lui
+înainte de a finaliza parserul; 4. tratează `AI_APP_SPECIFICATION.md` ca
+sursa principală de adevăr.
+
+Nu inventa funcționalități în afara specificației.
+
+## Obiectiv
+
+Implementează complet MVP-ul botului Telegram pentru orarul universitar
+descris în `AI_APP_SPECIFICATION.md`.
+
+Utilizatorul trebuie să poată: - selecta grupa; - apăsa `🕐 Acum`; -
+apăsa `📅 Program azi`; - schimba grupa.
+
+## Reguli critice
+
+-   NU hardcoda grupele.
+-   NU hardcoda URL-ul orarului.
+-   NU hardcoda tokenul Telegram.
+-   NU presupune că fiecare celulă conține un singur curs.
+-   NU presupune că data este repetată pe fiecare rând.
+-   NU presupune că intervalele orare au whitespace identic.
+-   NU ignora subgrupele `I:` și `II:`.
+-   NU inventa profesor, sală, tip de activitate sau alte date lipsă.
+-   NU înlocui cache-ul valid cu un rezultat gol/invalid.
+-   NU introduce servicii sau framework-uri inutile.
+-   NU implementa funcții excluse din MVP.
+
+## Particularități ale workbook-ului real
+
+Fișierul de referință are foaia `orar`.
+
+Structura verificată: - 130 × 12; - antetul relevant este în jurul
+rândurilor 2--4; - grupele sunt pe rândul 3; - datele încep de la rândul
+5; - în exemplul actual, ziua/data este în coloana B; - intervalul este
+în coloana C; - grupele ocupă coloanele D--J; - coloanele K--L repetă
+timp/zi și nu sunt grupe; - există celule îmbinate; - există celule cu
+două activități; - există subgrupe.
+
+Aceste coordonate descriu workbook-ul curent, dar parserul trebuie să
+detecteze semantic structura și să nu depindă inutil de litere fixe de
+coloană.
+
+Exemple reale de interval:
+
+``` text
+I
+15:00-16:30
+```
+
+``` text
+III
+ 18:30-20:00
+```
+
+Exemplu real cu două activități:
+
+``` text
+Analiza funct. (sem),
+V. Popa, 419/4
+Teoria prob. (sem),
+V. Popa, 419/4
+```
+
+## Model
+
+Folosește un model echivalent cu:
+
+``` python
+@dataclass
+class ScheduleEntry:
+    group: str
+    date: date
+    start_time: time
+    end_time: time
+    subject: str
+    activity_type: str | None = None
+    teacher: str | None = None
+    room: str | None = None
+    subgroup: str | None = None
+```
+
+Poți ajusta detalii de implementare, dar nu pierde informația
+reprezentată de aceste câmpuri.
+
+## Ordinea de lucru
+
+### Etapa 1 --- Inspectare
+
+Înainte de modificări: - listează structura repository-ului; - citește
+specificația; - verifică fișierele existente; - identifică ce există
+deja și ce lipsește.
+
+Nu rescrie cod funcțional fără motiv.
+
+### Etapa 2 --- Schelet
+
+Creează doar modulele necesare conform specificației: - configurare; -
+modele; - source/downloader; - parser; - cache; - schedule service; -
+SQLite repository; - Telegram handlers/keyboards; - logging; - tests; -
+entry point.
+
+### Etapa 3 --- Parserul
+
+Parserul este partea cea mai importantă.
+
+Implementează-l și testează-l înainte de integrarea completă Telegram.
+
+Trebuie să: - detecteze grupele din antet; - ignore coloanele
+auxiliare; - gestioneze merged cells; - propage data; - normalizeze
+orele; - separe mai multe activități; - păstreze subgrupele; - extragă
+câmpurile fără a inventa valori; - continue după erori locale.
+
+### Etapa 4 --- Teste parser
+
+Scrie teste automate pentru toate cazurile enumerate în specificație.
+
+Dacă workbook-ul real este disponibil în repository, folosește-l pentru
+un test de integrare sau creează fixture-uri mici reprezentative pe baza
+structurii lui.
+
+Nu considera parserul terminat doar pentru că funcționează pe un singur
+exemplu.
+
+### Etapa 5 --- ScheduleService
+
+Implementează: - activitatea curentă; - următoarea activitate; -
+programul zilei; - sortarea; - activități simultane/subgrupe; - pauze
+calculate.
+
+Folosește timezone-ul configurat, implicit `Europe/Chisinau`.
+
+### Etapa 6 --- Persistență
+
+Implementează SQLite doar pentru relația:
+
+``` text
+telegram_user_id → selected_group
+```
+
+Păstrează API-ul repository-ului mic.
+
+### Etapa 7 --- Cache și refresh
+
+Implementează refresh sigur:
+
+``` text
+download
+→ parse
+→ validate
+→ dacă valid: replace cache
+→ dacă invalid: păstrează cache-ul anterior
+```
+
+Testează explicit cazul de refresh invalid.
+
+### Etapa 8 --- Telegram
+
+Integrează: - `/start`; - selecția grupei; - `🕐 Acum`; -
+`📅 Program azi`; - `⚙️ Schimbă grupa`.
+
+Mesajele trebuie să fie scurte și lizibile pe telefon.
+
+### Etapa 9 --- Config și securitate
+
+Creează/verifică: - `.env.example`; - `.gitignore`; -
+`requirements.txt`; - logging fără secrete.
+
+### Etapa 10 --- README
+
+README trebuie să conțină minimum: 1. cerințe; 2. creare virtualenv; 3.
+instalare; 4. configurare `.env`; 5. cum se setează
+`SCHEDULE_SOURCE_URL`; 6. rulare; 7. teste.
+
+## Lucrul cu GitHub Copilot Agent
+
+Ai permisiunea să creezi și să modifici fișierele necesare proiectului.
+
+Înainte de modificări mari, verifică ce există deja.
+
+După fiecare etapă importantă: - rulează testele relevante; - repară
+erorile provocate de schimbare; - nu continua peste un test important
+care eșuează fără să explici cauza.
+
+Dacă ai acces la terminal, folosește-l pentru: - instalarea
+dependențelor necesare proiectului; - rularea testelor; - verificarea
+importurilor; - pornirea aplicației în măsura în care nu necesită
+credențiale reale.
+
+Nu afișa și nu cere să fie comise secrete.
+
+## Când ceva este ambiguu
+
+Ordinea priorităților: 1. `AI_APP_SPECIFICATION.md`; 2. structura reală
+a sursei de orar; 3. codul existent care este compatibil cu
+specificația; 4. testele; 5. cea mai simplă soluție robustă.
+
+Dacă o ambiguitate poate schimba comportamentul utilizatorului sau
+modelul de date, nu inventa cerința. Marchează clar problema și alege
+doar o soluție conservatoare/reversibilă.
+
+## Anti-overengineering
+
+Nu adăuga: - Docker doar „pentru viitor"; - Redis; - PostgreSQL; - ORM
+complex; - microservicii; - dependency injection framework; - web
+dashboard; - admin panel; - background infrastructure complicată; -
+abstracții fără utilizare concretă în MVP.
+
+Preferă Python simplu, module mici și teste bune.
+
+## Verificare finală obligatorie
+
+Înainte să declari proiectul terminat: 1. recitește
+`AI_APP_SPECIFICATION.md`; 2. verifică fiecare Acceptance Criterion; 3.
+rulează toate testele; 4. verifică faptul că nu există secrete în
+repository; 5. verifică `.env.example`; 6. verifică README; 7. verifică
+parserul pe cazurile reale dificile; 8. raportează orice limitare
+rămasă.
+
+## Formatul răspunsului final
+
+La final, răspunde cu: 1. ce ai implementat; 2. fișiere
+create/modificate; 3. arhitectura rezultată; 4. testele rulate și
+rezultatele; 5. cum pornesc proiectul; 6. ce trebuie să pun în `.env`;
+7. eventuale limitări; 8. statusul fiecărui Acceptance Criterion.
+
+Nu spune doar „done". Demonstrează că MVP-ul respectă specificația.
+
+## Instrucțiunea de start
+
+Începe acum prin a citi `AI_APP_SPECIFICATION.md` și a inspecta
+repository-ul. Nu implementa funcții suplimentare față de MVP.
+Construiește proiectul incremental și rulează testele pe parcurs.
