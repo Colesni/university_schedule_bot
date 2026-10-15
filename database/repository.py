@@ -28,5 +28,21 @@ class UserGroupRepository:
         )
         self.connection.commit()
 
+    def get_user_statistics(self) -> tuple[int, list[tuple[str, int]]]:
+        total_users = self.connection.execute(
+            "SELECT COUNT(*) FROM user_groups"
+        ).fetchone()[0]
+
+        groups = self.connection.execute(
+            """
+            SELECT selected_group, COUNT(*)
+            FROM user_groups
+            GROUP BY selected_group
+            ORDER BY COUNT(*) DESC
+            """
+        ).fetchall()
+
+        return total_users, groups
+
     def close(self) -> None:
         self.connection.close()

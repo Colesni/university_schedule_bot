@@ -1,13 +1,21 @@
+
 import logging
-import zipfile
 import os
+import zipfile
 
 from openpyxl.utils.exceptions import InvalidFileException
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from bot.handlers import BotHandlers
-from database.repository import UserGroupRepository
 from config import load_settings
+from database.repository import UserGroupRepository
 from schedule.cache import ScheduleCache
 from schedule.parser import parse_workbook
 from schedule.service import ScheduleService
@@ -21,32 +29,93 @@ def load_schedule(settings, cache: ScheduleCache) -> list:
     if not settings.schedule_source_url:
         logger.warning("SCHEDULE_SOURCE_URL is not configured; using cache")
         return cache.entries
+
     try:
-        entries = parse_workbook(PublicExportScheduleSource(settings.schedule_source_url).fetch())
+        entries = parse_workbook(
+            PublicExportScheduleSource(settings.schedule_source_url).fetch()
+        )
         if not entries:
             raise ValueError("schedule parser returned no valid entries")
+
         cache.replace(entries)
         logger.info("Schedule refreshed: %s valid entries", len(entries))
-    except (OSError, ValueError, KeyError, UnicodeDecodeError, InvalidFileException, zipfile.BadZipFile):
+
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        UnicodeDecodeError,
+        InvalidFileException,
+        zipfile.BadZipFile,
+    ):
         logger.exception("Schedule refresh failed; keeping the last valid cache")
+
     return cache.entries
 
 
 def build_application() -> Application:
     settings = load_settings()
+
     if not settings.telegram_bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN is not configured")
+
     configure_logging()
+
     cache = ScheduleCache()
     entries = load_schedule(settings, cache)
     service = ScheduleService(entries, settings.timezone)
+
     repository = UserGroupRepository(
-        path="/data/schedule_bot.sqlite3" if os.getenv("RAILWAY_ENVIRONMENT") else "schedule_bot.sqlite3"
+        path=(
+            "/data/schedule_bot.sqlite3"
+            if os.getenv("RAILWAY_ENVIRONMENT")
+            else "schedule_bot.sqlite3"
+        )
     )
+
     handlers = BotHandlers(service, repository)
-    application = Application.builder().token(settings.telegram_bot_token).build()
+
+    async def admin(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        admin_id = os.getenv("TELEGRAM_ADMIN_ID")
+
+        if (
+            not admin_id
+            or not update.effective_user
+            or str(update.effective_user.id) != admin_id
+        ):
+            await update.effective_message.reply_text(
+                "⛔ Nu ai acces la această comandă."
+            )
+            return
+
+        total, groups = repository.get_user_statistics()
+
+        lines = [
+            "📊 UniFlow — Statistici",
+            "",
+            f"👥 Utilizatori înregistrați: {total}",
+            "",
+        ]
+
+        for group, count in groups:
+            lines.append(f"📚 {group}: {count}")
+
+        await update.effective_message.reply_text("\n".join(lines))
+
+    application = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .build()
+    )
+
     application.add_handler(CommandHandler("start", handlers.start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.text))
+    application.add_handler(CommandHandler("admin", admin))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.text)
+    )
 
     async def refresh_job(context) -> None:
         refreshed = load_schedule(settings, cache)
@@ -57,6 +126,7 @@ def build_application() -> Application:
         interval=settings.schedule_refresh_hours * 60 * 60,
         first=settings.schedule_refresh_hours * 60 * 60,
     )
+
     return application
 
 
